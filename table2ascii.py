@@ -66,6 +66,10 @@ class BaseTableVisitor(Visitor):
     """
     Returns the number of columns this cell spans,
     and its width in character columns.
+
+    Args:
+        node: the node of the cell.
+        col: the column index of this cell.
     """
     cols = node.get('morecols', 0) + 1
     width = sum(self.widths[col:col + cols]) + (cols - 1)
@@ -75,6 +79,10 @@ class BaseTableVisitor(Visitor):
     """
     Returns the number of rows this cell spans,
     and its height in lines.
+
+    Args:
+        node: the node of the cell.
+        row: the row index of this cell.
     """
     rows = node.get('morerows', 0) + 1
     height = sum(self.heights[row:row + rows]) + (rows - 1)
@@ -84,6 +92,11 @@ class BaseTableVisitor(Visitor):
     """
     Returns the number of columns and rows this cell spans,
     and its width in character columns and height in lines.
+
+    Args:
+        node: the node of the cell.
+        col: the column index of this cell.
+        row: the row index of this cell.
     """
     cols, width = self._get_cols(node, col)
     rows, height = self._get_rows(node, row)
@@ -107,6 +120,10 @@ class TableOutliner(BaseTableVisitor):
     self.local_row = 0
 
   def _draw_rule(self):
+    """
+    Draw the leftmost and upmost borders of the table,
+    and fills the defined rectangle with spaces.
+    """
     total_width = sum(self.widths) + (len(self.widths) + 1)
     total_height = sum(self.heights) + (len(self.heights) + 1)
 
@@ -130,12 +147,22 @@ class TableOutliner(BaseTableVisitor):
 
   visit_body = visit_head
 
+  def _is_last_row(self, spanned_rows):
+    """
+    Returns whenever the current row is the last row, given
+    the span of the current cell.
+
+    Args:
+        spanned_rows: the number of rows the current cell spans.
+    """
+    return self.local_row + spanned_rows - 1 == self.nb_rows - 1
+
   def visit_cell(self, node):
     cols, rows, width, height = self._get_cell_dimensions(node, self.col, self.row)
 
     # Draw the horizontal rule
 
-    rule = '=' if self.local_row + rows - 1 == self.nb_rows - 1 else '-'
+    rule = '=' if self._is_last_row(rows) else '-'
 
     self._rewrite_in_line(self.line + height, self.cursor, '+' + (width * rule) + '+')
 
@@ -143,14 +170,9 @@ class TableOutliner(BaseTableVisitor):
 
     for i in range(height):
       self._rewrite_in_line(self.line + i, self.cursor + width + 1, '|')
-
     self._rewrite_in_line(self.line - 1, self.cursor + width + 1, '+')
 
-    self.col += cols
-    self.cursor += width + 1
-
-    # Do not recurse
-    raise SkipChildren
+    BaseTableVisitor.visit_cell(self, node)
 
 class TableWriter(BaseTableVisitor):
 
@@ -162,15 +184,16 @@ class TableWriter(BaseTableVisitor):
     self.heights = outliner.heights
 
   def visit_cell(self, node):
-    cols, rows, width, height = self._get_cell_dimensions(node, self.col, self.row)
 
-    # Write cell contents
+    # Wrap the text contents of the cell
 
-    data = wrap(node['data'], width=width - 2)
-    i = 1
-    for l in data:
-      self._rewrite_in_line(self.line + i, self.cursor + 2, l)
-      i += 1
+    width = self._get_cols(node, self.col)[1]
+    data = wrap(node['data'], width=width-2)
+
+    # Write the cell contents
+
+    for i in range(len(data)):
+      self._rewrite_in_line(self.line + i + 1, self.cursor + 2, data[i])
 
     BaseTableVisitor.visit_cell(self, node)
 
